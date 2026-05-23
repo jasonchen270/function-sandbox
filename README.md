@@ -1,86 +1,66 @@
-# add-only
+# function-sandbox
 
-Change a program's behavior by **adding a file**, never by editing an existing
-one. The point is conflict-free parallelism: if every change is its own new
-file and no file edits another, then many people (or many agents) can work at
-once and their work always unions cleanly. There is nothing to merge.
+Try a change to **one function** without touching your source.
 
-## How it works
-
-The core is written once with **seams**: instead of hard-coding a step, it reads
-it from a `Registry`. An override is a new file under `overrides/` that, at
-program startup, registers itself into a seam. No existing file is touched.
+`function-sandbox <function>` makes a throwaway copy of your project where every
+file is a **symlink back to your original**, except the single file that defines
+that function, which is a real, writable **copy**. You edit that one copy, build
+and run the copy, and see the result. Your real tree is never modified, so
+there's nothing to back up and nothing to restore: when done, delete the copy.
 
 ```
-core/registry.h     generic "newest wins" keyed registry (header-only)
-core/pricing.*      seam #1: adjustments that STACK (every key's winner applies)
-core/receipt.*      seam #2: a SINGLE renderer (one winner)
-app/main.cpp        the program
-overrides/*.cpp     the changes, one file each, self-registering
+your-project/                 your-project.sandbox-area/   (the throwaway copy)
+  main.cpp                       main.cpp   -> symlink to your original
+  area.cpp   (defines area)      area.cpp   == REAL COPY  (edit this one)
+  area.h                         area.h     -> symlink
+  build.sh                       build.sh   -> symlink
 ```
 
-Three facts make it work, in order of how-surprising:
+## Why a copy of symlinks, instead of editing in place or an override file
 
-1. **A global variable is initialized before `main`.** Each override ends with
-   `const bool _registered = ...set(key, recency, fn);`. Creating that global
-   runs `set`, which pins the override into the registry. The file wires itself
-   in just by being compiled in. (`build.sh` compiles every `overrides/*.cpp`.)
-2. **The registry is a runtime list, not a file.** Two overrides each carry
-   their own `set(...)` line in their own file, so no shared source is edited.
-   The combined list is assembled in memory at startup. Git never sees a shared
-   line, so there is never a conflict.
-3. **Conflicts are resolved by an explicit recency stamp, not arrival order.**
-   Static-initialization order across files is unspecified, so "who registered
-   last" is unreliable. Each override carries a recency (the local time in ms at
-   scaffold time). For a given key, the highest recency wins. The comparison is
-   order-independent, so the winner is the same no matter how the linker ordered
-   things.
+- **Not in-place + restore:** that would modify your real file; one crash mid-way
+  and your source is in an unknown state. Here the original is opened read-only.
+- **Not "add an override file":** to make an added file win over the original in
+  the same binary you'd need link-time symbol tricks (weak symbols, `--wrap`),
+  which are fiddly and don't work cleanly everywhere. Editing a real copy of the
+  one file, with the rest symlinked, is trivial and portable, and the compiler
+  follows the symlinks so the build is unchanged.
 
-## Conflict policy: one winner, most recent
+The version lives in the **copy**; near-zero duplication (one real file, the rest
+pointers); undo is just `rm -rf` of the copy.
 
-When two overrides claim the same key, the newer recency wins; the older is
-ignored (it still compiles in, it just loses). So to change an existing
-behavior, drop a new override for the same key: being newer, it supersedes the
-old one with no edit to anything.
+## Build
 
-`overrides/tax_v1.cpp` (8%) and `tax_v2.cpp` (5%) both claim `100-tax`. `tax_v2`
-is newer, so the app charges 5%.
-
-## Apply order (for stacking seams)
-
-Adjustments apply in **key order** (the registry is a sorted map). Prefix keys
-with a number to sequence them: `100-tax` runs before `200-discount`.
+```sh
+./build.sh        # compiles function-sandbox.cpp -> ./function-sandbox
+```
 
 ## Use
 
-```sh
-./build.sh                       # compile core + every override into build/app
-./build/app                      # run it
-./verify.sh                      # build and assert expected output
-
-./override adjust shipping 150-shipping   # scaffold a stacking adjustment
-./override render plain                    # scaffold a replacement renderer
-# edit the generated overrides/<name>.cpp body, then ./build.sh
-```
-
-## The rule that keeps it conflict-free
+Run it from the root of any C++ project:
 
 ```sh
-tools/additive-guard.sh          # fails if any change touches anything but overrides/
+cd example
+../function-sandbox area
+#  -> made a throwaway copy at  .../example.sandbox-area
+#     edit area() there:  area.cpp:4
+#     then: cd '.../example.sandbox-area' && ./build.sh && ./build/app
+#     delete it when done: rm -rf '.../example.sandbox-area'
 ```
 
-This is the structural enforcement: contributors (human or agent) may only add
-files under `overrides/`. Because no one edits shared bytes, parallel work never
-conflicts. The guard is what makes that a guarantee instead of a convention.
+It finds where the function is **defined** (searching the whole tree, picking the
+definition: the form where the next `{` precedes the next `;`), copies the tree
+with that one file made real and everything else symlinked, and prints where to
+edit and how to run. It does **not** edit, build, or run, you drive that.
 
 ## Limits (be honest)
 
-- **Build-time + restart.** Overrides take effect on the next compile and run,
-  not live.
-- **Recency is the local clock at scaffold time.** Fine on one machine. Across
-  machines with skewed clocks the ordering can lie; use git commit time instead
-  if that matters.
-- **Stacking vs replacing collisions differ.** Two overrides of *different*
-  adjustment keys both apply (by design). Two of the *same* key is a real
-  contest that recency settles. The guard prevents *git* conflicts, not the
-  logical decision of who should win.
+- **Edit only the file it points you at.** Every other file is a symlink, so
+  editing one of those would write through to your original. If an experiment
+  grows to a second file, re-run it on a function in that file.
+- **Function location is a light parser** (regex for the definition + a brace/
+  semicolon heuristic). Fine for normal C++; it can be fooled by overloads
+  (returns the first) or a prototype with a brace default-arg. A clang AST would
+  be exact; this is the lightweight trade.
+- **Build convention:** the printed hint assumes `./build.sh` produces
+  `build/app` (as the bundled `example/` does). Adjust to your project's commands.
