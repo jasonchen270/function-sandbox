@@ -34,8 +34,3 @@ cd example
 #     then: cd '.../example.sandbox-area' && ./build.sh && ./build/app
 #     delete it when done: rm -rf '.../example.sandbox-area'
 ```
-
-It finds where the function is **defined** (searching the whole tree, picking the
-definition: the form where the next `{` precedes the next `;`), copies the tree
-with that one file made real and everything else symlinked, and prints where to
-edit and how to run. It does **not** edit, build, or run, you drive that.
