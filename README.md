@@ -1,4 +1,4 @@
-# overlay
+# add-only
 
 Change a program's behavior by **adding a file**, never by editing an existing
 one. The point is conflict-free parallelism: if every change is its own new
