@@ -8,14 +8,6 @@ that function, which is a real, writable **copy**. You edit that one copy, build
 and run the copy, and see the result. Your real tree is never modified, so
 there's nothing to back up and nothing to restore: when done, delete the copy.
 
-```
-your-project/                 your-project.sandbox-area/   (the throwaway copy)
-  main.cpp                       main.cpp   -> symlink to your original
-  area.cpp   (defines area)      area.cpp   == REAL COPY  (edit this one)
-  area.h                         area.h     -> symlink
-  build.sh                       build.sh   -> symlink
-```
-
 ## Build
 
 ```sh
