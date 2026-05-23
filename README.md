@@ -16,19 +16,6 @@ your-project/                 your-project.sandbox-area/   (the throwaway copy)
   build.sh                       build.sh   -> symlink
 ```
 
-## Why a copy of symlinks, instead of editing in place or an override file
-
-- **Not in-place + restore:** that would modify your real file; one crash mid-way
-  and your source is in an unknown state. Here the original is opened read-only.
-- **Not "add an override file":** to make an added file win over the original in
-  the same binary you'd need link-time symbol tricks (weak symbols, `--wrap`),
-  which are fiddly and don't work cleanly everywhere. Editing a real copy of the
-  one file, with the rest symlinked, is trivial and portable, and the compiler
-  follows the symlinks so the build is unchanged.
-
-The version lives in the **copy**; near-zero duplication (one real file, the rest
-pointers); undo is just `rm -rf` of the copy.
-
 ## Build
 
 ```sh
@@ -52,15 +39,3 @@ It finds where the function is **defined** (searching the whole tree, picking th
 definition: the form where the next `{` precedes the next `;`), copies the tree
 with that one file made real and everything else symlinked, and prints where to
 edit and how to run. It does **not** edit, build, or run, you drive that.
-
-## Limits (be honest)
-
-- **Edit only the file it points you at.** Every other file is a symlink, so
-  editing one of those would write through to your original. If an experiment
-  grows to a second file, re-run it on a function in that file.
-- **Function location is a light parser** (regex for the definition + a brace/
-  semicolon heuristic). Fine for normal C++; it can be fooled by overloads
-  (returns the first) or a prototype with a brace default-arg. A clang AST would
-  be exact; this is the lightweight trade.
-- **Build convention:** the printed hint assumes `./build.sh` produces
-  `build/app` (as the bundled `example/` does). Adjust to your project's commands.
